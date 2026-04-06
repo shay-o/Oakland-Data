@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "oakland-data": {
+      "command": "/Users/jamesoreilly/Documents/Projects/Oakland-data-MCP/.venv/bin/python",
+      "args": ["-m", "oakland_mcp.server"],
+      "cwd": "/Users/jamesoreilly/Documents/Projects/Oakland-data-MCP"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+[project]
+name = "oakland-data-mcp"
+version = "0.1.0"
+description = "MCP server for Oakland, CA open government data via Socrata SODA API"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]",
+    "httpx",
+    "fastapi",
+    "uvicorn[standard]",
+    "openai",
+    "python-dotenv",
+]
+
+[tool.setuptools.packages.find]
+include = ["oakland_mcp*"]
+
+[project.scripts]
+oakland-mcp = "oakland_mcp.server:main"
