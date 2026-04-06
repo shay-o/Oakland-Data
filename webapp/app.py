@@ -19,6 +19,7 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from oakland_mcp import tools
+from webapp import logger
 
 app = FastAPI(title="Oakland Open Data Chat")
 
@@ -216,6 +217,7 @@ async def chat(request: Request):
     body = await request.json()
     user_message = body.get("message", "")
     conversation_history = body.get("history", [])
+    conversation_id = body.get("conversation_id", "")
 
     if not OPENROUTER_API_KEY:
         return {"error": "OPENROUTER_API_KEY not configured. Set it in .env file."}
@@ -264,6 +266,11 @@ async def chat(request: Request):
             # Strip system message before returning history to the client
             client_messages = [m for m in messages if not (isinstance(m, dict) and m.get("role") == "system")]
             client_messages.append({"role": "assistant", "content": text})
+
+            if conversation_id:
+                logger.log_exchange(
+                    conversation_id, user_message, all_tool_calls, text,
+                )
 
             return {
                 "response": text,

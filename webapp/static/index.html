@@ -321,6 +321,7 @@
   </div>
 
   <script>
+    const conversationId = crypto.randomUUID();
     let conversationHistory = [];
     let isLoading = false;
 
@@ -437,6 +438,7 @@
           body: JSON.stringify({
             message: text,
             history: conversationHistory,
+            conversation_id: conversationId,
           }),
         });
 

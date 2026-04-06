@@ -5,6 +5,11 @@
 An MCP (Model Context Protocol) server that provides AI-powered access to Oakland, California's
 public government data via the Socrata SODA API. Includes a web chat interface for interactive use.
 
+## Next Steps and To Do's
+
+- Investigate why app is not aware of Anthropic limitations. Understand what's going on and how to work around it. See conversation text at '/Users/jamesoreilly/Documents/Projects/Oakland-data-MCP/Conversation with Web App for Oakland Data.md'
+- Add unit/regression tests
+
 ## Architecture Decision: MCP Server wrapping Socrata SODA API
 
 ### Why MCP over direct API access?
@@ -128,8 +133,10 @@ Oakland-data-MCP/
 │   └── server.py              # MCP server entry point (FastMCP)
 ├── webapp/
 │   ├── app.py                 # FastAPI backend + Claude API integration
+│   ├── logger.py              # Conversation logging to JSON files
 │   └── static/
 │       └── index.html         # Single-page chat UI
+├── logs/                        # Conversation log files (gitignored)
 └── .cursor/
     └── mcp.json               # Cursor MCP client configuration
 ```
@@ -143,6 +150,48 @@ Oakland-data-MCP/
 - **FastMCP**: Uses the Python MCP SDK's FastMCP API for minimal boilerplate.
 - **Vanilla frontend**: The web chat UI uses plain HTML/CSS/JS — no build step, no
   framework dependencies. Modern and clean.
+
+## Conversation Logging
+
+### Why log conversations?
+
+The web app originally kept conversation state only in the browser — refresh the page and
+it's gone. Server-side logging lets us review what questions people ask, how the LLM uses
+the tools, and whether the responses are useful. This is essential for improving the system
+prompt, tool design, and understanding real usage patterns.
+
+### Design choices
+
+- **JSON files, not a database**: Each conversation is a single `.json` file in `logs/`.
+  This keeps the project dependency-free (no SQLite, no Postgres) and makes logs easy to
+  inspect, grep, copy, or delete. The tradeoff is that querying across conversations
+  requires reading multiple files — acceptable at this scale.
+
+- **One file per conversation**: A conversation starts when the page loads (generating a
+  UUID via `crypto.randomUUID()`) and ends when the user navigates away. Each exchange
+  (user message → tool calls → assistant response) is appended to the same file. This
+  groups related exchanges and makes individual conversations easy to follow.
+
+- **Atomic writes**: The logger writes to a `.tmp` file and renames it into place, avoiding
+  partial writes if the process crashes mid-write.
+
+- **Full fidelity**: Logs capture everything — user message, all tool calls with inputs and
+  truncated results, assistant response, and timestamps. Tool call results are truncated
+  to 500 chars (matching what the frontend already receives) to keep file sizes reasonable.
+
+- **Server-side, not client-side**: Logging happens in the FastAPI backend (`app.py`), not
+  in the browser. This ensures logs are captured even if the user closes the tab before
+  the frontend finishes processing.
+
+- **No log rotation or cleanup yet**: Files accumulate indefinitely. At current expected
+  usage this is fine. Can add date-based cleanup or max file count later if needed.
+
+### What's NOT logged
+
+- The full LLM message history (intermediate tool call messages) — only the final
+  user/assistant exchange and tool call summaries.
+- System prompts or model configuration.
+- Client metadata (IP address, user agent, etc.).
 
 ## Key Oakland Datasets
 
