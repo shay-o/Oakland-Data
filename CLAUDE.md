@@ -7,8 +7,31 @@ public government data via the Socrata SODA API. Includes a web chat interface f
 
 ## Next Steps and To Do's
 
-- Investigate why app is not aware of Anthropic limitations. Understand what's going on and how to work around it. See conversation text at '/Users/jamesoreilly/Documents/Projects/Oakland-data-MCP/Conversation with Web App for Oakland Data.md'
 - Add unit/regression tests
+
+## Resolved: Tool-calling loop exhaustion
+
+**Symptom**: On the third question in a multi-turn conversation about street trees, the
+app returned `"Error: Max tool call iterations reached."` instead of an answer.
+
+**Root cause**: The tool-calling loop in `webapp/app.py` allows 10 rounds. The original
+system prompt prescribed a rigid 4-step workflow (search → metadata → preview → query) for
+every question. On follow-up questions where the dataset and columns were already established,
+the LLM re-ran the full discovery workflow, exhausting the budget before producing an answer.
+The error came from this app's code, not from Anthropic or OpenRouter.
+
+**Fixes applied**:
+1. Revised the system prompt to give the LLM principles instead of a rigid script. It now
+   explicitly tells the model to reuse dataset IDs and column names from conversation
+   history, skip redundant discovery steps, and states the tool-call budget (`MAX_TOOL_ROUNDS`).
+2. Added a graceful fallback: when the loop exhausts, the app makes one final LLM call
+   *without tools*, passing all accumulated context, and asks for a best-effort summary.
+   The user always gets an answer, never a raw error.
+3. Extracted `_build_response()` helper so both the normal path and fallback share the
+   same response-building and logging logic.
+
+See the conversation transcript in `Conversation with Web App for Oakland Data.md` for the
+full user-facing exchange that surfaced this bug.
 
 ## Architecture Decision: MCP Server wrapping Socrata SODA API
 

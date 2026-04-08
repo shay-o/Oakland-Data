@@ -178,19 +178,27 @@ TOOL_FUNCTIONS = {
     "get_column_stats": tools.get_column_stats,
 }
 
-SYSTEM_PROMPT = """You are an Oakland Open Data assistant. You help users explore and analyze 
-public government data from Oakland, California's open data portal (data.oaklandca.gov).
+MAX_TOOL_ROUNDS = 10
 
-You have tools to search for datasets, view metadata, preview data, run queries, and get 
-column statistics. Follow this workflow:
+SYSTEM_PROMPT = f"""You are an Oakland Open Data assistant. You help users explore and \
+analyze public government data from Oakland, California's open data portal \
+(data.oaklandca.gov).
 
-1. Search for relevant datasets using search_datasets
-2. Get metadata with get_dataset_info to understand columns
-3. Preview data or get column stats to understand values
-4. Query with specific filters using query_dataset
+You have six tools: search_datasets, list_categories, get_dataset_info, preview_dataset, \
+query_dataset, and get_column_stats. Use them as needed, but be efficient:
 
-Always explain what data you found and what it means. If a query returns no results, 
-suggest alternative approaches. Be specific about data limitations (e.g., date ranges, 
+- If the conversation already established a dataset ID or column names, go straight to \
+query_dataset. Do NOT re-search or re-fetch metadata you already have.
+- Use search_datasets only when you need to discover a new dataset.
+- Use get_dataset_info only when you need column names or types you haven't seen yet.
+- Prefer a single well-targeted query_dataset call over multiple exploratory calls.
+
+You have a maximum of {MAX_TOOL_ROUNDS} tool-calling rounds per response. Plan your tool \
+usage to answer the question well within that budget. If you are unsure, prioritize \
+answering with the data you have over making additional calls.
+
+Always explain what data you found and what it means. If a query returns no results, \
+suggest alternative approaches. Be specific about data limitations (e.g., date ranges, \
 missing fields).
 
 Keep responses concise but informative. Format data clearly when presenting results."""
@@ -209,6 +217,29 @@ async def execute_tool(name: str, args: dict[str, Any]) -> str:
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return (STATIC_DIR / "index.html").read_text()
+
+
+def _build_response(
+    text: str,
+    tool_calls: list[dict],
+    messages: list,
+    conversation_id: str,
+    user_message: str,
+) -> dict:
+    client_messages = [
+        m for m in messages
+        if not (isinstance(m, dict) and m.get("role") == "system")
+    ]
+    client_messages.append({"role": "assistant", "content": text})
+
+    if conversation_id:
+        logger.log_exchange(conversation_id, user_message, tool_calls, text)
+
+    return {
+        "response": text,
+        "tool_calls": tool_calls,
+        "messages": client_messages,
+    }
 
 
 @app.post("/api/chat")
@@ -230,8 +261,7 @@ async def chat(request: Request):
 
     all_tool_calls = []
 
-    max_iterations = 10
-    for _ in range(max_iterations):
+    for _ in range(MAX_TOOL_ROUNDS):
         response = openai_client.chat.completions.create(
             model=MODEL,
             max_tokens=4096,
@@ -262,23 +292,24 @@ async def chat(request: Request):
                 })
         else:
             text = choice.message.content or ""
+            return _build_response(text, all_tool_calls, messages, conversation_id, user_message)
 
-            # Strip system message before returning history to the client
-            client_messages = [m for m in messages if not (isinstance(m, dict) and m.get("role") == "system")]
-            client_messages.append({"role": "assistant", "content": text})
-
-            if conversation_id:
-                logger.log_exchange(
-                    conversation_id, user_message, all_tool_calls, text,
-                )
-
-            return {
-                "response": text,
-                "tool_calls": all_tool_calls,
-                "messages": client_messages,
-            }
-
-    return {"error": "Max tool call iterations reached.", "tool_calls": all_tool_calls}
+    # Graceful fallback: ask the LLM to summarize what it found without tools
+    messages.append({
+        "role": "user",
+        "content": (
+            "You have used all available tool-calling rounds. Based on the data you "
+            "have gathered so far, please provide the best answer you can. Do not "
+            "attempt any more tool calls."
+        ),
+    })
+    fallback = openai_client.chat.completions.create(
+        model=MODEL,
+        max_tokens=4096,
+        messages=messages,
+    )
+    text = fallback.choices[0].message.content or ""
+    return _build_response(text, all_tool_calls, messages, conversation_id, user_message)
 
 
 if __name__ == "__main__":
