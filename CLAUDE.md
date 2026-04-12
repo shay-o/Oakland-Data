@@ -9,6 +9,46 @@ public government data via the Socrata SODA API. Includes a web chat interface f
 
 - Add unit/regression tests
 
+## Testing principles for tool-calling apps
+
+### Multi-turn loop tests should be the spine of the test suite `[testing]`
+
+The class of bug fixed in commit 225fe44 (loop exhaustion on the third turn)
+is the most dangerous category of bug for this style of app: it ships green
+in single-turn tests and breaks in production on follow-up questions. Any
+test suite for `webapp/app.py` must drive at least one 3-turn conversation
+end-to-end with a scripted fake LLM.
+
+> "It's also common to include stopping conditions (such as a maximum number
+> of iterations) to maintain control."
+> — [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents)
+
+**Apply to this project:** the existing `tests/test_webapp_loop.py` covers
+this in three tests (single-turn happy path, three-turn follow-up, exhaustion
+fallback). When adding new features that touch the loop or system prompt,
+extend `test_multi_turn_followup_does_not_exhaust_loop` rather than only
+adding a new single-turn test. The fallback test in particular should be
+preserved exactly — it's the regression guard for 225fe44.
+
+### Iterate on tool descriptions with real model traffic, not assumptions `[testing] [tools]`
+
+The current `oakland_mcp/tools.py` docstrings double as the LLM-facing tool
+descriptions in `webapp/app.py` (`TOOL_DEFINITIONS`). When loop behavior
+seems off, the first knob to turn is *the tool descriptions*, not the system
+prompt.
+
+> "It can be difficult to anticipate which tools agents will find ergonomic
+> and which tools they won't without getting hands-on yourself. Start by
+> standing up a quick prototype of your tools."
+> — [Writing tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents)
+
+**Apply to this project:** when reviewing logs in `logs/`, look for tool
+calls that didn't quite do what the user wanted. That's a tool-description
+problem more often than a system-prompt problem. The conversation logger you
+already built is exactly the instrument for this kind of iteration.
+
+---
+
 ## Resolved: Tool-calling loop exhaustion
 
 **Symptom**: On the third question in a multi-turn conversation about street trees, the
