@@ -73,6 +73,41 @@ The error came from this app's code, not from Anthropic or OpenRouter.
 See the conversation transcript in `Conversation with Web App for Oakland Data.md` for the
 full user-facing exchange that surfaced this bug.
 
+## Resolved: Location column query failures
+
+**Symptom**: When a user asked about trees on a specific street (e.g., "Park Ave"), the LLM
+attempted `WHERE stname LIKE '%PARK%'` which returned a 400 error from Socrata. The LLM
+then fell back to `SELECT *` with a limit, effectively ignoring the user's filter.
+
+**Root causes**:
+1. **Opaque error handling**: `query_dataset` caught `httpx.HTTPStatusError` but only surfaced
+   the status code ("400 Bad Request"), not Socrata's error body which clearly said
+   `"type-mismatch for #LIKE, is location"`. The LLM couldn't self-correct because it didn't
+   know *why* the query failed.
+2. **No guidance on `location` type columns**: Socrata's `location` type is a composite
+   JSON structure (address, city, state, zip, lat, lng), not a plain string. The metadata
+   endpoint reports `dataTypeName=location`, but the `get_dataset_info` tool didn't explain
+   that this type can't be filtered with `LIKE` or `=` — you must use sub-columns like
+   `stname_address LIKE '%PARK%'`.
+
+**Fixes applied**:
+1. `query_dataset`, `preview_dataset`, and `get_column_stats` now catch `HTTPStatusError` and
+   return the full Socrata error body plus a hint about location sub-columns.
+2. `get_dataset_info` now flags every `location`-type column with an inline warning listing
+   its sub-columns (`_address`, `_city`, `_state`, `_zip`, `_latitude`, `_longitude`) and
+   adds a summary block with a working query example.
+
+**General principles** (also captured in `~/.claude/CLAUDE.md`):
+- **Never swallow API error details** — the LLM needs the upstream error message to
+  self-correct. Return the real error body, not a generic status code.
+- **Translate non-obvious type semantics into query guidance** — if a data type has special
+  query rules (composite types, geospatial, JSON), explain them in the tool output where the
+  LLM will see them before querying.
+- **Design for self-correction** — assume the LLM will sometimes get queries wrong. Give it
+  enough information to recover on the next attempt.
+
+---
+
 ## Architecture Decision: MCP Server wrapping Socrata SODA API
 
 ### Why MCP over direct API access?

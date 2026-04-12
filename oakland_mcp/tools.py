@@ -156,6 +156,8 @@ async def get_dataset_info(dataset_id: str) -> str:
         f"\n**Description:**\n{desc}\n",
     ]
 
+    location_cols: list[str] = []
+
     if columns:
         lines.append(f"**Columns ({len(columns)}):**\n")
         for col in columns:
@@ -165,9 +167,28 @@ async def get_dataset_info(dataset_id: str) -> str:
             line = f"- `{col_name}` ({col_type})"
             if col_desc:
                 line += f" — {col_desc[:100]}"
+            if col_type == "location":
+                location_cols.append(col_name)
+                line += (
+                    f"  ⚠ This is a composite location column. "
+                    f"You CANNOT filter it directly with LIKE or =. "
+                    f"Use its sub-columns instead: "
+                    f"`{col_name}_address`, `{col_name}_city`, "
+                    f"`{col_name}_state`, `{col_name}_zip`."
+                )
             lines.append(line)
     else:
         lines.append("No column information available.")
+
+    if location_cols:
+        names = ", ".join(f"`{c}`" for c in location_cols)
+        lines.append(
+            f"\n**⚠ Location columns ({names}):** These store structured "
+            f"address/coordinate data, not plain text. To filter, query the "
+            f"sub-columns (e.g., `WHERE {location_cols[0]}_address LIKE '%BROADWAY%'`). "
+            f"Sub-columns: `_address`, `_city`, `_state`, `_zip`. "
+            f"For coordinates: `_latitude`, `_longitude`."
+        )
 
     lines.append("")
     lines.append(f"**Next steps:** Use `preview_dataset(\"{dataset_id}\")` to see "
@@ -197,7 +218,10 @@ async def preview_dataset(
 
     limit = _clamp(limit, 1, 50, DEFAULT_PREVIEW_LIMIT)
 
-    rows = await socrata.soda_query(dataset_id, {"$limit": str(limit)})
+    try:
+        rows = await socrata.soda_query(dataset_id, {"$limit": str(limit)})
+    except httpx.HTTPStatusError as e:
+        return f"Socrata API error ({e.response.status_code}): {e.response.text}"
 
     if not rows:
         return f"No data found in dataset `{dataset_id}`."
@@ -282,7 +306,16 @@ async def query_dataset(
     if having:
         params["$having"] = having
 
-    rows = await socrata.soda_query(dataset_id, params)
+    try:
+        rows = await socrata.soda_query(dataset_id, params)
+    except httpx.HTTPStatusError as e:
+        body = e.response.text
+        return (
+            f"Socrata API error ({e.response.status_code}): {body}\n\n"
+            f"Hint: If a column is a `location` type, you cannot filter it directly. "
+            f"Use sub-columns instead (e.g., `columnname_address LIKE '%VALUE%'`). "
+            f"Run `get_dataset_info(\"{dataset_id}\")` to check column types."
+        )
 
     if not rows:
         return "No results found for this query."
@@ -363,10 +396,13 @@ async def get_column_stats(
     try:
         rows = await socrata.soda_query(dataset_id, params)
     except httpx.HTTPStatusError as e:
-        if e.response.status_code == 400:
-            return (f"Error: Column `{column_name}` not found or cannot be aggregated. "
-                    f"Use `get_dataset_info(\"{dataset_id}\")` to see valid column names.")
-        raise
+        body = e.response.text
+        return (
+            f"Socrata API error ({e.response.status_code}): {body}\n\n"
+            f"Column `{column_name}` may not exist or may not support aggregation. "
+            f"If it is a `location` type, try a sub-column like `{column_name}_address`. "
+            f"Use `get_dataset_info(\"{dataset_id}\")` to check column names and types."
+        )
 
     if not rows:
         return f"No data found for column `{column_name}` in dataset `{dataset_id}`."
