@@ -234,6 +234,9 @@ Oakland-data-MCP/
 │   ├── logger.py              # Conversation logging to JSON files
 │   └── static/
 │       └── index.html         # Single-page chat UI
+├── tests/
+│   ├── conftest.py              # Shared fixtures and fake API responses
+│   └── test_tools.py            # Tool unit tests with mocked HTTP (respx)
 ├── logs/                        # Conversation log files (gitignored)
 └── .cursor/
     └── mcp.json               # Cursor MCP client configuration
