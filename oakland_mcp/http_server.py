@@ -1,8 +1,15 @@
 """Streamable-HTTP MCP server with bearer-token auth, suitable for Vercel.
 
 Exposes an ASGI `app` that serves the MCP protocol at `/mcp`. Each request is
-authenticated against the `MCP_AUTH_TOKEN` env var via the `Authorization:
-Bearer <token>` header.
+authenticated against the `MCP_AUTH_TOKEN` env var via either:
+
+- `Authorization: Bearer <token>` header (preferred — used by Claude Code
+  and any client that supports custom headers), or
+- `?token=<token>` query string (fallback — used by clients like Claude
+  Desktop's custom-connector UI, which only accepts a URL).
+
+The query-string form leaks the token into URL bars and access logs; prefer
+the header when the client supports it.
 
 The underlying FastMCP is configured with `stateless_http=True` so that each
 request is self-contained — required for serverless runtimes where successive
@@ -40,9 +47,17 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
                 {"error": "server missing MCP_AUTH_TOKEN"}, status_code=500
             )
 
+        # Prefer the Authorization header; fall back to ?token=... for
+        # clients (e.g. Claude Desktop custom connectors) that can only
+        # configure a URL.
         header = request.headers.get("authorization", "")
-        scheme, _, token = header.partition(" ")
-        if scheme.lower() != "bearer" or token != expected:
+        scheme, _, header_token = header.partition(" ")
+        presented = (
+            header_token
+            if scheme.lower() == "bearer" and header_token
+            else request.query_params.get("token", "")
+        )
+        if presented != expected:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
         return await call_next(request)
