@@ -27,6 +27,8 @@ def build_server(*, stateless_http: bool = False) -> FastMCP:
         if stateless_http
         else None
     )
+    request may hit a different process instance.
+    """
     mcp = FastMCP(
         "oakland-data",
         instructions=INSTRUCTIONS,
