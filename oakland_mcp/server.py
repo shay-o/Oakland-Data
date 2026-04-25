@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from . import tools
 
@@ -16,12 +17,23 @@ def build_server(*, stateless_http: bool = False) -> FastMCP:
     """Create a FastMCP instance with all Oakland tools registered.
 
     Set stateless_http=True for serverless HTTP deployments where each
+    request may hit a different process instance. DNS-rebinding protection
+    is disabled when stateless_http=True because public deployments sit
+    behind bearer-token auth (in http_server.py), which already prevents
+    the unauthenticated browser-driven attack the protection targets.
+    """
+    transport_security = (
+        TransportSecuritySettings(enable_dns_rebinding_protection=False)
+        if stateless_http
+        else None
+    )
     request may hit a different process instance.
     """
     mcp = FastMCP(
         "oakland-data",
         instructions=INSTRUCTIONS,
         stateless_http=stateless_http,
+        transport_security=transport_security,
     )
 
     @mcp.tool()
