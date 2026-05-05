@@ -1,0 +1,31 @@
+name: oakland-baseline
+description: Current Oakland MCP. Six structured tools, no python_eval.
+
+mcp:
+  # In-process tool surface (no subprocess MCP for the prototype). The runner
+  # imports these functions from oakland_mcp.tools directly. Keeping the
+  # transport spec here documents intent and leaves room for an "external MCP"
+  # variant later (e.g. srobbin/opengov-mcp-server over stdio).
+  transport: in_process
+  tools:
+    - search_datasets
+    - list_categories
+    - get_dataset_info
+    - preview_dataset
+    - query_dataset
+    - get_column_stats
+
+model:
+  provider: openrouter
+  name: anthropic/claude-sonnet-4
+  temperature: 0.0
+  max_tokens: 4096
+
+agent:
+  system_prompt_file: ../prompts/oakland_baseline.md
+  max_tool_rounds: 10
+  on_exhaustion: fallback_summary
+
+runtime:
+  trials_per_question: 3
+  timeout_seconds: 120

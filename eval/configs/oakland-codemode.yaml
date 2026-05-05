@@ -1,0 +1,22 @@
+name: oakland-codemode
+description: Same Oakland MCP, code-mode surface. One python_eval tool.
+
+mcp:
+  transport: in_process
+  tools:
+    - python_eval
+
+model:
+  provider: openrouter
+  name: anthropic/claude-sonnet-4
+  temperature: 0.0
+  max_tokens: 4096
+
+agent:
+  system_prompt_file: ../prompts/oakland_codemode.md
+  max_tool_rounds: 10
+  on_exhaustion: fallback_summary
+
+runtime:
+  trials_per_question: 3
+  timeout_seconds: 180   # Scripts can run a bit longer than single tool calls.

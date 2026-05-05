@@ -148,6 +148,32 @@ def build_server(*, stateless_http: bool = False) -> FastMCP:
         )
 
     @mcp.tool()
+    async def python_eval(script: str, timeout: float = 30.0) -> str:
+        """Run a Python script in a sandbox with the Oakland runtime available.
+
+        This is the "code mode" entry point. Prefer it for multi-step questions,
+        aggregations across many rows, or cross-dataset joins where chaining
+        individual tools would burn many rounds and many tokens.
+
+        Inside the script:
+            from mcp.oakland import (
+                search_datasets, list_categories, get_dataset_info,
+                preview_dataset, query_dataset, get_column_stats, OaklandAPIError,
+            )
+        Functions return structured data (lists/dicts), not strings.
+        See `oakland_mcp/runtime/README.md` for the full playbook.
+
+        Args:
+            script: Python source code to execute.
+            timeout: Wall-clock seconds (default 30).
+
+        Returns:
+            Combined stdout / stderr plus duration. Tracebacks in stderr are
+            actionable — adjust the script on the next attempt.
+        """
+        return await tools.python_eval(script, timeout)
+
+    @mcp.tool()
     async def get_column_stats(dataset_id: str, column_name: str) -> str:
         """Get distinct values and frequency counts for a column in a dataset.
 

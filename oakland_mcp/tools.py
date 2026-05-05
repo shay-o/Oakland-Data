@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from . import socrata
+from . import sandbox, socrata
 from .config import (
     MAX_LIMIT,
     DEFAULT_QUERY_LIMIT,
@@ -425,5 +425,42 @@ async def get_column_stats(
         lines.append("\n(Showing top 50 values; there may be more.)")
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Tool 7: python_eval (code-mode)
+# ---------------------------------------------------------------------------
+
+async def python_eval(script: str, timeout: float = 30.0) -> str:
+    """Run a Python script in a sandbox with the Oakland runtime available.
+
+    Use when answering a multi-step question is more efficient as one script
+    than as a chain of individual tool calls — especially aggregation,
+    cross-dataset joins, and any task where intermediate results are large.
+
+    Args:
+        script: Python source code. Imports `from mcp.oakland import ...`
+                give access to: search_datasets, list_categories,
+                get_dataset_info, preview_dataset, query_dataset,
+                get_column_stats, OaklandAPIError.
+        timeout: Wall-clock seconds (default 30).
+
+    Returns:
+        Combined stdout/stderr plus duration. Errors come back as Python
+        tracebacks in stderr — read them and adjust on the next attempt.
+    """
+    if not isinstance(script, str) or not script.strip():
+        return "Error: `script` must be a non-empty Python source string."
+
+    result = await sandbox.run_script(script=script, timeout=timeout)
+
+    parts = [f"[exit={result['exit_code']} duration_ms={result['duration_ms']}]"]
+    if result["stdout"]:
+        parts.append(f"---stdout---\n{result['stdout']}")
+    if result["stderr"]:
+        parts.append(f"---stderr---\n{result['stderr']}")
+    if not result["stdout"] and not result["stderr"]:
+        parts.append("(no output)")
+    return "\n".join(parts)
 
 
